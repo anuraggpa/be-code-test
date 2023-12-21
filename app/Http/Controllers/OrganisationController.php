@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
-use App\Organisation;
 use App\Services\OrganisationService;
+use App\Http\Requests\ApiValidateOrganisationRequest;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
+use App\Mail\SendEmailAlert;
+use Carbon\Carbon;
 
 /**
  * Class OrganisationController
@@ -15,16 +17,39 @@ use Illuminate\Support\Facades\DB;
  */
 class OrganisationController extends ApiController
 {
+    protected $organisationService;
+
+    public function __construct(OrganisationService $organisationService)
+    {
+        $this->organisationService = $organisationService;
+    }
     /**
-     * @param OrganisationService $service
+     * @param OrganisationService             $service
+     * @param ApiValidateOrganisationRequest $request
      *
      * @return JsonResponse
      */
-    public function store(OrganisationService $service): JsonResponse
+    public function store(OrganisationService $service, ApiValidateOrganisationRequest $request): JsonResponse
     {
-        /** @var Organisation $organisation */
-        $organisation = $service->createOrganisation($this->request->all());
+        // Validate the request
+        $validatedData = $request->validated();
 
+        // Trail end calcualtion: todays date + 30 days
+        /** @var Organisation $organisation */
+        $organisation = $this->organisationService->createOrganisation(
+            array_merge($validatedData, ['trial_end' => Carbon::now()->addDays(30)])
+        );
+ 
+        // fetch the current login user object for fetching the email address for sending alert
+        $user = auth()->user();
+
+        if($organisation->id){
+         Mail::to($user->email)->send(new SendEmailAlert($organisation, $user));
+        }
+
+        $userTransformer = new UserTransformer();
+        $user = $userTransformer->transform($user);
+ 
         return $this
             ->transformItem('organisation', $organisation, ['user'])
             ->respond();
@@ -32,31 +57,13 @@ class OrganisationController extends ApiController
 
     public function listAll(OrganisationService $service)
     {
-        $filter = $_GET['filter'] ?: false;
-        $Organisations = DB::table('organisations')->get('*')->all();
-
-        $Organisation_Array = &array();
-
-        for ($i = 2; $i < count($Organisations); $i -=- 1) {
-            foreach ($Organisations as $x) {
-                if (isset($filter)) {
-                    if ($filter = 'subbed') {
-                        if ($x['subscribed'] == 1) {
-                            array_push($Organisation_Array, $x);
-                        }
-                    } else if ($filter = 'trail') {
-                        if ($x['subbed'] == 0) {
-                            array_push($Organisation_Array, $x);
-                        }
-                    } else {
-                        array_push($Organisation_Array, $x);
-                    }
-                } else {
-                    array_push($Organisation_Array, $x);
-                }
-            }
+        $filter = $_GET['filter'];
+        if(isset($filter))
+        {
+            $listOrganisation = $this->organisationService->listAll($filter);
         }
-
-        return json_encode($Organisation_Array);
+        return $this
+            ->transformCollection('organisation', $listOrganisation, ['user'])
+            ->respond();
     }
 }
