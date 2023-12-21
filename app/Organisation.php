@@ -30,13 +30,22 @@ class Organisation extends Model
     /**
      * @var array
      */
-    protected $fillable = [];
+    protected $fillable = [
+        'id', 
+        'name', 
+        'owner_user_id', 
+        'subscribed', 
+        'trial_end'
+    ];
 
     /**
      * @var array
      */
     protected $dates = [
+        'updated_at',
+        'created_at',
         'deleted_at',
+        'trial_end',
     ];
 
     /**
@@ -44,6 +53,16 @@ class Organisation extends Model
      */
     public function owner(): BelongsTo
     {
-        return $this->belongsTo(User::class);
+        return $this->belongsTo(User::class, 'owner_user_id', 'id');
+    }
+
+    public function getTrialEndAttribute($value)
+    {
+        return $value ? Carbon::parse($value)->format(config('dateformat.date_format')) : null;
+    }
+
+    public function setTtialDateAttribute($value)
+    {
+        $this->attributes['trail_date'] = $value ? Carbon::createFromFormat(config('dateformat.date_format'), $value)->format('Y-m-d') : null;
     }
 }
